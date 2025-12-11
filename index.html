@@ -5,9 +5,28 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Play & Whisper — Cute Game Room</title>
 
-  <!-- Cursive font + Google Material icons -->
+  <!-- Cursive font -->
   <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <style>
+    .palakHidden {
+      font-family: 'Great Vibes', cursive;
+      font-size: 32px;
+      color: #ff69b4;
+      background: linear-gradient(90deg, #ffd6ec, #fff0f8);
+      padding: 4px 14px;
+      border-radius: 12px;
+      display: inline-block;
+      transform: rotate(-2deg);
+      text-shadow: 0px 3px 8px rgba(255,105,180,0.4);
+      animation: glow 2.2s ease-in-out infinite alternate;
+    }
+    @keyframes glow {
+      from { box-shadow: 0 0 4px #ff9acb; }
+      to { box-shadow: 0 0 14px #ff71b8; }
+    }
+  </style>
 
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -15,7 +34,10 @@
   <div class="container">
     <header class="header">
       <h1 class="title">Play & Whisper</h1>
-      <p class="subtitle">Invite your crush with a room code ✨ — secret message revealed only to the winner 💌</p>
+      <p class="subtitle">
+        Welcome to the special game room for
+        <span class="palakHidden">𝒫𝒶𝓁𝒶𝓀</span>
+      </p>
     </header>
 
     <main class="main-card">
@@ -38,7 +60,7 @@
           </div>
 
           <div class="form-row small">
-            <input id="secretInput" placeholder="Write secret message (only winner will see)" />
+            <input id="secretInput" placeholder="Write your secret message (winner sees it)" />
             <small>Both players must set a secret before starting.</small>
           </div>
 
@@ -63,9 +85,7 @@
           </div>
         </div>
 
-        <div id="gameContainer" class="game-container">
-          <!-- dynamic: chess board or ludo board -->
-        </div>
+        <div id="gameContainer" class="game-container"></div>
 
         <div class="controls">
           <div id="diceArea" style="display:none;">
@@ -84,13 +104,10 @@
       </section>
     </main>
 
-    <footer class="footer">Made with 💖 — surprise your crush!</footer>
+    <footer class="footer">Made with 💖 for someone very special</footer>
   </div>
 
-  <!-- Socket.IO client -->
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-
-  <!-- main frontend -->
   <script src="./app.js"></script>
 </body>
 </html>
