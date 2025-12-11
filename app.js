@@ -1,8 +1,7 @@
-/* app.js
-   Functional frontend for single-folder Ludo+Chess multiplayer using Socket.IO
-   - Bindings for Create/Join/Start/Leave
-   - Handles simple Ludo & Chess render + moves
-   - Obfuscated "Palak Pandey" (base64) included for hidden reference
+/* app.js (patched)
+ - auto-sends your secret if missing when you click Start
+ - gives clear alerts if opponent/players missing
+ - keeps original Ludo/Chess rendering & behavior
 */
 
 const socket = io(); // same-origin
@@ -57,21 +56,60 @@ function updateReadyHint(){
   else readyHint.textContent = 'Both set! Host can start the game.';
 }
 
+// --- utility: ensure our secret is sent to server
+function ensureMySecretSent() {
+  const s = (secretInput.value || '').trim();
+  if(s && !meSetSecret) {
+    socket.emit('set_secret',{room,secret:s});
+    meSetSecret = true;
+  }
+}
+
 // Bind actions
 createBtn.addEventListener('click', () => {
   const name = nameInput.value.trim() || decodeHiddenName();
   gameType = gameSelect.value;
+  console.log('create_room ->', name, gameType);
   socket.emit('create_room',{name,game:gameType});
 });
 joinBtn.addEventListener('click', () => {
   const name = nameInput.value.trim() || decodeHiddenName();
   const code = joinCode.value.trim().toUpperCase();
   if(!code){ alert('Enter room code'); return; }
+  console.log('join_room ->', name, code);
   socket.emit('join_room',{name,code});
 });
+
+// DEFENSIVE start handler: auto-set your secret if missing; show clear errors
 startBtn.addEventListener('click', ()=> {
+  console.log('Start button clicked. current room:', room, 'amHost:', amHost);
+  // safety checks
+  if(!room){
+    alert('No room selected.');
+    return;
+  }
+  // If user hasn't set a secret, auto-send what is in the input (if any)
+  const s = (secretInput.value || '').trim();
+  if(!meSetSecret && s){
+    socket.emit('set_secret',{room,secret:s});
+    meSetSecret = true;
+  }
+
+  // Ask server for latest players by relying on the existing players_update flow.
+  // But here do a quick client-side check: start allowed only for host + 2 players + both secrets
+  // We can infer players from playersList text but that's brittle; better to let server validate and respond with start_denied.
+  // Provide friendly UX messages before emitting:
+  if(!amHost){
+    alert('Only host can start the game. If you created the room, please use that device to start.');
+    return;
+  }
+
+  // Emit start_game — server will validate and reply start_ack or start_denied
   socket.emit('start_game',{room});
+  startBtn.disabled = true; // avoid double clicks while server responds
 });
+
+// leave/back
 leaveBtn.addEventListener('click', ()=> {
   socket.emit('leave_room',{room});
   resetLobby();
@@ -102,40 +140,50 @@ function setSecretIfAny(){
 }
 
 // socket events
-socket.on('connect', ()=>{ mySid = socket.id; });
+socket.on('connect', ()=>{ mySid = socket.id; console.log('socket connected', mySid); });
 socket.on('room_created', data => {
+  console.log('room_created', data);
   room = data.code; amHost = true; gameType = data.game;
   roomCodeSpan.textContent = room;
   roomCodeTop.textContent = `Room: ${room} • ${gameType.toUpperCase()}`;
   roomBox.style.display='block';
   setPlayersDisplay(data.players);
   showLobby();
-  setSecretIfAny();
+  // auto-send secret if there's something in input
+  ensureMySecretSent();
 });
 socket.on('room_joined', data => {
+  console.log('room_joined', data);
   room = data.code; amHost = false; gameType = data.game;
   roomCodeSpan.textContent = room;
   roomCodeTop.textContent = `Room: ${room} • ${gameType.toUpperCase()}`;
   roomBox.style.display='block';
   setPlayersDisplay(data.players);
   showLobby();
-  setSecretIfAny();
+  ensureMySecretSent();
 });
 socket.on('players_update', data => {
+  console.log('players_update', data.players);
   setPlayersDisplay(data.players);
   opponentSetSecret = data.players.some(p => p.sid !== mySid && p.secretSet);
   meSetSecret = data.players.some(p => p.sid === mySid && p.secretSet);
   updateReadyHint();
+  // enable start only if host and exactly 2 players and both secrets set
   startBtn.disabled = !(amHost && data.players.length===2 && data.players.every(p=>p.secretSet));
+  // Helpful UI: if host and two players but other hasn't set secret, notify host politely
+  if(amHost && data.players.length===2 && !data.players.every(p=>p.secretSet)) {
+    console.log('Host waiting for both secrets.');
+  }
 });
 socket.on('start_ack', data => {
-  gameType = data.players && data.players.length ? data.players[0].game : gameType;
+  console.log('start_ack received', data);
+  gameType = data.game || gameType;
+  // render UI + show game area
   buildGameUI(data.game || gameType, data.state, data.players);
   showGame();
 });
 socket.on('dice_result', data => {
   diceVal.textContent = data.val;
-  // server will emit state_update next
   setTimeout(()=> rollBtn.disabled = false, 600);
 });
 socket.on('state_update', data => {
@@ -147,13 +195,12 @@ socket.on('game_over', data => {
   alert(`${winner} won!`);
 });
 socket.on('reveal_secret', data => {
-  // private to winner
   alert(`Secret for winner 💌:\n\n${data.secret}`);
 });
 socket.on('left_room', ()=>{ resetLobby(); });
-socket.on('connect_error', err => console.error('socket connect error', err));
-socket.on('join_error', d => alert(d.msg || 'Join failed'));
-socket.on('start_denied', d => alert(d.msg || 'Cannot start'));
+socket.on('connect_error', err => { console.error('socket connect error', err); alert('Socket connect error: see console'); });
+socket.on('join_error', d => { console.warn('join_error', d); alert(d.msg || 'Join failed'); });
+socket.on('start_denied', d => { console.warn('start_denied', d); startBtn.disabled = false; alert(d.msg || 'Cannot start'); });
 
 // UI helpers
 function setPlayersDisplay(players){
@@ -172,7 +219,7 @@ function resetLobby(){
   chessControls.style.display='none';
 }
 
-// ----------------- GAME UI BUILDERS -----------------
+// ----------------- GAME UI BUILDERS ----------------- (unchanged)
 function buildGameUI(type, state, players){
   gameContainer.innerHTML = '';
   diceArea.style.display='none';
@@ -186,7 +233,8 @@ function buildGameUI(type, state, players){
   }
 }
 
-// -------- Ludo (render-only, server authoritative) --------
+// Ludo and Chess rendering functions are identical to your originals
+// (copy them from your previous app.js - they remain unchanged)
 let ludoState = null;
 function buildLudoBoard(){
   const wrap = document.createElement('div');
@@ -254,7 +302,7 @@ function renderLudoState(state){
   }
 }
 
-// -------- Chess (simple capture-king rules) --------
+// Chess
 let chessState = null;
 function buildChessBoard(){
   const wrap = document.createElement('div');
