@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Play & Whisper — Cute Game Room</title>
+
+  <!-- Cursive font + Google Material icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1 class="title">Play & Whisper</h1>
+      <p class="subtitle">Invite your crush with a room code ✨ — secret message revealed only to the winner 💌</p>
+    </header>
+
+    <main class="main-card">
+      <section id="lobby" class="panel">
+        <div class="card">
+          <h2>Create or Join Room</h2>
+
+          <div class="form-row">
+            <input id="nameInput" placeholder="Your name" />
+            <select id="gameSelect">
+              <option value="ludo">Ludo</option>
+              <option value="chess">Chess</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <button id="createBtn" class="btn">Create Room</button>
+            <input id="joinCode" placeholder="Room code (e.g. AB12CD)" />
+            <button id="joinBtn" class="btn outline">Join Room</button>
+          </div>
+
+          <div class="form-row small">
+            <input id="secretInput" placeholder="Write secret message (only winner will see)" />
+            <small>Both players must set a secret before starting.</small>
+          </div>
+
+          <div class="room-box" id="roomBox" style="display:none;">
+            <p>Room: <span id="roomCodeSpan"></span></p>
+            <p>Players: <span id="playersList">—</span></p>
+            <p id="readyHint">Waiting for players to join & set secrets...</p>
+            <button id="startBtn" class="btn" disabled>Start Game</button>
+            <button id="leaveBtn" class="btn outline">Leave Room</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="gameArea" class="panel" style="display:none;">
+        <div class="topbar">
+          <div class="room-info">
+            <span id="roomCodeTop"></span>
+          </div>
+          <div class="players-inline">
+            <span id="playerA" class="player-pill"></span>
+            <span id="playerB" class="player-pill"></span>
+          </div>
+        </div>
+
+        <div id="gameContainer" class="game-container">
+          <!-- dynamic: chess board or ludo board -->
+        </div>
+
+        <div class="controls">
+          <div id="diceArea" style="display:none;">
+            <button id="rollBtn" class="btn big">Roll 🎲</button>
+            <div id="diceVal" class="dice">—</div>
+          </div>
+
+          <div id="chessControls" style="display:none;">
+            <button id="resignBtn" class="btn outline">Resign</button>
+          </div>
+
+          <div class="small-actions">
+            <button id="backLobbyBtn" class="btn outline">Back to Lobby</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">Made with 💖 — surprise your crush!</footer>
+  </div>
+
+  <!-- Socket.IO client -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"
+    integrity="sha384-xxxxxxxx" crossorigin="anonymous"></script>
+
+  <script src="./app.js"></script>
+</body>
+</html>
