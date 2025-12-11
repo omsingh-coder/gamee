@@ -1,0 +1,104 @@
+:root{
+  --bg: #fff6fb;
+  --card: #ffffff;
+  --accent: #ff69b4;
+  --muted: #7b6f72;
+  --glass: rgba(255,255,255,0.6);
+  font-family: 'Poppins', sans-serif;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background: linear-gradient(180deg, #fff6fb 0%, #fff0f8 100%);
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#4a3a3d;
+}
+
+.container{
+  width:100%;
+  max-width:1100px;
+  padding:20px;
+}
+
+.header{text-align:center;margin-bottom:12px}
+.title{
+  font-family:'Great Vibes', cursive;
+  font-size:48px;
+  margin:4px 0;
+  color:var(--accent);
+  text-shadow: 0 6px 20px rgba(255,105,180,0.12);
+  letter-spacing:1px;
+}
+.subtitle{margin:0;color:var(--muted)}
+
+.main-card{
+  display:flex;
+  gap:16px;
+  align-items:flex-start;
+}
+
+.panel{flex:1}
+
+.card{
+  background:var(--card);
+  border-radius:16px;
+  padding:18px;
+  box-shadow: 0 8px 30px rgba(100,50,80,0.08);
+  transition: transform .18s ease;
+}
+
+.card:hover{transform: translateY(-4px)}
+
+.form-row{display:flex;gap:8px;margin-top:12px}
+.form-row input, .form-row select{
+  flex:1;padding:10px;border-radius:10px;border:1px solid #f0dfe6;background:transparent;
+  outline:none;font-size:15px;
+}
+.btn{
+  background:linear-gradient(90deg,#ff8fc0,#ff69b4);
+  border:none;color:white;padding:10px 14px;border-radius:10px;cursor:pointer;
+  font-weight:600;box-shadow:0 8px 18px rgba(255,105,180,0.12);
+}
+.btn.outline{
+  background:transparent;color:var(--accent);border:1px solid rgba(255,105,180,0.18);
+  box-shadow:none;font-weight:600;
+}
+.btn.big{padding:14px 20px;font-size:18px;border-radius:12px}
+
+.room-box{margin-top:14px;padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,240,250,0.6), rgba(255,245,248,0.6));}
+
+.room-info{font-weight:600;color:var(--muted)}
+.players-inline{display:flex;gap:8px}
+.player-pill{padding:6px 10px;border-radius:999px;background:var(--glass);font-size:14px}
+
+.game-container{
+  margin-top:14px;
+  min-height:420px;
+  border-radius:14px;
+  padding:12px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,250,250,0.9));
+  display:flex;align-items:center;justify-content:center;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+
+/* little cute animations */
+@keyframes pop {
+  0%{transform:scale(.95);opacity:0}
+  60%{transform:scale(1.02);opacity:1}
+  100%{transform:scale(1)}
+}
+.card{animation:pop .5s ease both}
+
+.dice{font-size:32px;margin-top:8px;font-weight:700;padding:12px;border-radius:10px;background:rgba(255,255,255,0.8);box-shadow:0 6px 14px rgba(0,0,0,0.06);}
+
+.footer{text-align:center;margin-top:12px;color:var(--muted);font-size:13px}
+
+/* small responsive */
+@media (max-width:900px){
+  .main-card{flex-direction:column}
+  .title{font-size:36px}
+}
