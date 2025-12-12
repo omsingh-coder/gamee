@@ -1,12 +1,11 @@
-/* app.js (patched)
- - auto-sends your secret if missing when you click Start
- - gives clear alerts if opponent/players missing
- - keeps original Ludo/Chess rendering & behavior
+/* app.js - upgraded for turn-based real-feel Ludo + Chess
+   - Enforces per-player dice-roll rights in Ludo
+   - Highlights chess possible moves
+   - Only current player can act (UI + server validation)
 */
 
-const socket = io(); // same-origin
+const socket = io();
 
-// -- UI elements
 const nameInput = document.getElementById('nameInput');
 const gameSelect = document.getElementById('gameSelect');
 const createBtn = document.getElementById('createBtn');
@@ -41,177 +40,126 @@ let gameType = null;
 let amHost = false;
 let meSetSecret = false;
 let opponentSetSecret = false;
+let myColor = null; // for chess: 'w' or 'b'
 
-// Palak Pandey hidden (base64) — decode only if you want to display subtly
-const hiddenNameB64 = 'UGFsYWsgUGFuZGV5'; // "Palak Pandey"
-function decodeHiddenName(){ try { return atob(hiddenNameB64); } catch(e){ return 'P.P.'; } }
+const hiddenNameB64 = 'UGFsYWsgUGFuZGV5';
+function decodeHiddenName(){ try{ return atob(hiddenNameB64);}catch(e){return 'P.P.';} }
 
-// helpers
 function showLobby(){ lobby.style.display='block'; gameArea.style.display='none'; }
 function showGame(){ lobby.style.display='none'; gameArea.style.display='block'; }
 
-function updateReadyHint(){
-  if(!meSetSecret) readyHint.textContent = 'Set your secret message in the input above.';
-  else if(!opponentSetSecret) readyHint.textContent = 'Waiting for your partner to set secret...';
-  else readyHint.textContent = 'Both set! Host can start the game.';
-}
-
-// --- utility: ensure our secret is sent to server
-function ensureMySecretSent() {
-  const s = (secretInput.value || '').trim();
-  if(s && !meSetSecret) {
-    socket.emit('set_secret',{room,secret:s});
-    meSetSecret = true;
-  }
-}
-
-// Bind actions
-createBtn.addEventListener('click', () => {
+// ---------- UI bindings ----------
+createBtn.onclick = () => {
   const name = nameInput.value.trim() || decodeHiddenName();
   gameType = gameSelect.value;
-  console.log('create_room ->', name, gameType);
   socket.emit('create_room',{name,game:gameType});
-});
-joinBtn.addEventListener('click', () => {
+};
+joinBtn.onclick = () => {
   const name = nameInput.value.trim() || decodeHiddenName();
   const code = joinCode.value.trim().toUpperCase();
   if(!code){ alert('Enter room code'); return; }
-  console.log('join_room ->', name, code);
   socket.emit('join_room',{name,code});
-});
-
-// DEFENSIVE start handler: auto-set your secret if missing; show clear errors
-startBtn.addEventListener('click', ()=> {
-  console.log('Start button clicked. current room:', room, 'amHost:', amHost);
-  // safety checks
-  if(!room){
-    alert('No room selected.');
-    return;
-  }
-  // If user hasn't set a secret, auto-send what is in the input (if any)
-  const s = (secretInput.value || '').trim();
-  if(!meSetSecret && s){
-    socket.emit('set_secret',{room,secret:s});
-    meSetSecret = true;
-  }
-
-  // Ask server for latest players by relying on the existing players_update flow.
-  // But here do a quick client-side check: start allowed only for host + 2 players + both secrets
-  // We can infer players from playersList text but that's brittle; better to let server validate and respond with start_denied.
-  // Provide friendly UX messages before emitting:
-  if(!amHost){
-    alert('Only host can start the game. If you created the room, please use that device to start.');
-    return;
-  }
-
-  // Emit start_game — server will validate and reply start_ack or start_denied
+};
+startBtn.onclick = () => {
+  // auto-send secret if present and not already set
+  const s = (secretInput.value||'').trim();
+  if(s && !meSetSecret) socket.emit('set_secret',{room,secret:s});
   socket.emit('start_game',{room});
-  startBtn.disabled = true; // avoid double clicks while server responds
-});
-
-// leave/back
-leaveBtn.addEventListener('click', ()=> {
-  socket.emit('leave_room',{room});
-  resetLobby();
-});
-backLobbyBtn.addEventListener('click', ()=> {
-  socket.emit('leave_room',{room});
-  resetLobby();
-});
-rollBtn.addEventListener('click', ()=> {
+};
+leaveBtn.onclick = ()=> { socket.emit('leave_room',{room}); resetLobby(); };
+backLobbyBtn.onclick = ()=> { socket.emit('leave_room',{room}); resetLobby(); };
+rollBtn.onclick = ()=> {
+  // roll button may be disabled by UI unless it's our turn
   socket.emit('roll_dice',{room});
   rollBtn.disabled = true;
-});
-resignBtn.addEventListener('click', ()=> {
-  if(confirm('Resign?')) socket.emit('resign',{room});
-});
+};
+resignBtn.onclick = ()=> { if(confirm('Resign?')) socket.emit('resign',{room}); };
 
-// auto-set secret on blur or Enter
-secretInput.addEventListener('blur', setSecretIfAny);
-secretInput.addEventListener('keydown', (e)=> {
-  if(e.key === 'Enter') { e.preventDefault(); setSecretIfAny(); }
+// secret quick set
+secretInput.addEventListener('keydown', e=> {
+  if(e.key === 'Enter'){ e.preventDefault(); const s = (secretInput.value||'').trim(); if(s){ socket.emit('set_secret',{room,secret:s}); meSetSecret=true; } }
 });
-function setSecretIfAny(){
-  const s = (secretInput.value || '').trim();
-  if(!s) return;
-  socket.emit('set_secret',{room,secret:s});
-  meSetSecret = true;
-  updateReadyHint();
-}
+secretInput.addEventListener('blur', ()=>{ const s = (secretInput.value||'').trim(); if(s && !meSetSecret){ socket.emit('set_secret',{room,secret:s}); meSetSecret=true; } });
 
-// socket events
-socket.on('connect', ()=>{ mySid = socket.id; console.log('socket connected', mySid); });
+// ---------- socket handlers ----------
+socket.on('connect', ()=>{ mySid = socket.id; console.log('connected', mySid); });
+
 socket.on('room_created', data => {
-  console.log('room_created', data);
-  room = data.code; amHost = true; gameType = data.game;
+  room = data.code; amHost=true; gameType = data.game;
   roomCodeSpan.textContent = room;
   roomCodeTop.textContent = `Room: ${room} • ${gameType.toUpperCase()}`;
   roomBox.style.display='block';
   setPlayersDisplay(data.players);
   showLobby();
-  // auto-send secret if there's something in input
-  ensureMySecretSent();
 });
 socket.on('room_joined', data => {
-  console.log('room_joined', data);
-  room = data.code; amHost = false; gameType = data.game;
+  room = data.code; amHost=false; gameType = data.game;
   roomCodeSpan.textContent = room;
   roomCodeTop.textContent = `Room: ${room} • ${gameType.toUpperCase()}`;
   roomBox.style.display='block';
   setPlayersDisplay(data.players);
   showLobby();
-  ensureMySecretSent();
 });
 socket.on('players_update', data => {
-  console.log('players_update', data.players);
   setPlayersDisplay(data.players);
   opponentSetSecret = data.players.some(p => p.sid !== mySid && p.secretSet);
   meSetSecret = data.players.some(p => p.sid === mySid && p.secretSet);
-  updateReadyHint();
-  // enable start only if host and exactly 2 players and both secrets set
+  readyHint.textContent = !meSetSecret ? 'Set your secret message' : (!opponentSetSecret ? 'Waiting for other player' : 'Both set - host can start');
   startBtn.disabled = !(amHost && data.players.length===2 && data.players.every(p=>p.secretSet));
-  // Helpful UI: if host and two players but other hasn't set secret, notify host politely
-  if(amHost && data.players.length===2 && !data.players.every(p=>p.secretSet)) {
-    console.log('Host waiting for both secrets.');
-  }
 });
+
 socket.on('start_ack', data => {
-  console.log('start_ack received', data);
+  // data.state must be used; also data.game tells which game
   gameType = data.game || gameType;
-  // render UI + show game area
-  buildGameUI(data.game || gameType, data.state, data.players);
+  // map my color for chess
+  if(gameType === 'chess' && data.players){
+    const me = data.players.find(p => p.sid === mySid);
+    if(me){
+      // server stored color mapping in state.color_of; but easier: deduce from state's color_of
+      const color_of = data.state?.color_of || {};
+      myColor = color_of[mySid] || null;
+    }
+  }
+  buildGameUI(gameType, data.state, data.players);
   showGame();
 });
+
+socket.on('state_update', data => {
+  // update UI and ensure turn-based controls enabled/disabled accordingly
+  const state = data.state;
+  if(!state) return;
+  if(gameType === 'ludo'){
+    // show whose turn it is
+    const curSid = state.order[state.turnIndex];
+    updateTurnUILudo(curSid);
+    renderLudoState(state);
+  } else {
+    // chess
+    renderChessState(state);
+  }
+});
+
 socket.on('dice_result', data => {
   diceVal.textContent = data.val;
-  setTimeout(()=> rollBtn.disabled = false, 600);
+  // still wait for state_update that will follow after move
 });
-socket.on('state_update', data => {
-  if(gameType === 'ludo') renderLudoState(data.state);
-  else renderChessState(data.state);
-});
-socket.on('game_over', data => {
-  const winner = data.winnerName || 'Winner';
-  alert(`${winner} won!`);
-});
-socket.on('reveal_secret', data => {
-  alert(`Secret for winner 💌:\n\n${data.secret}`);
-});
-socket.on('left_room', ()=>{ resetLobby(); });
-socket.on('connect_error', err => { console.error('socket connect error', err); alert('Socket connect error: see console'); });
-socket.on('join_error', d => { console.warn('join_error', d); alert(d.msg || 'Join failed'); });
-socket.on('start_denied', d => { console.warn('start_denied', d); startBtn.disabled = false; alert(d.msg || 'Cannot start'); });
 
-// UI helpers
+socket.on('not_your_turn', d => { alert(d.msg || 'Not your turn'); });
+socket.on('no_dice', d => { alert(d.msg || 'You need to roll first'); });
+socket.on('invalid_move', d => { alert(d.msg || 'Invalid move') });
+socket.on('illegal_move', d => { alert(d.msg || 'Illegal move'); });
+socket.on('game_over', data => { alert((data.winnerName || 'Someone') + ' won!'); });
+socket.on('reveal_secret', data => { alert('Secret for winner: ' + (data.secret||'')); });
+
+// ---------- UI helpers ----------
 function setPlayersDisplay(players){
   playersList.textContent = players.map(p=>p.name + (p.secretSet? ' ✅':'')).join(' | ');
   playerA.textContent = players[0]? players[0].name:'—';
   playerB.textContent = players[1]? players[1].name:'—';
 }
 
-// reset
 function resetLobby(){
-  room = null; amHost=false; meSetSecret=false; opponentSetSecret=false;
+  room = null; amHost=false; meSetSecret=false; opponentSetSecret=false; myColor=null;
   roomBox.style.display='none'; startBtn.disabled=true;
   showLobby();
   gameContainer.innerHTML = '';
@@ -219,7 +167,23 @@ function resetLobby(){
   chessControls.style.display='none';
 }
 
-// ----------------- GAME UI BUILDERS ----------------- (unchanged)
+// ---------------- LUDO UI ----------------
+function updateTurnUILudo(curSid){
+  // enable roll button only if it's our sid
+  if(curSid === mySid){
+    rollBtn.disabled = false;
+  } else {
+    rollBtn.disabled = true;
+  }
+  // visually indicate current player
+  const players = [playerA, playerB];
+  players.forEach(el => el.style.boxShadow = 'none');
+  if(playerA.textContent && playerA.textContent.trim() !== '—' && curSid === window.currentPlayerSid?.a) {
+    playerA.style.boxShadow = '0 6px 18px rgba(255,105,180,0.12)';
+  }
+}
+
+// Build board container
 function buildGameUI(type, state, players){
   gameContainer.innerHTML = '';
   diceArea.style.display='none';
@@ -227,24 +191,27 @@ function buildGameUI(type, state, players){
   if(type === 'ludo'){
     diceArea.style.display='block';
     buildLudoBoard();
+    // store current players mapping to start indices for rendering
+    window.ludoState = state;
   } else {
     chessControls.style.display='block';
     buildChessBoard();
+    window.chessState = state;
+    // capture my color if provided in state
+    myColor = state?.color_of?.[mySid] || myColor;
   }
 }
 
-// Ludo and Chess rendering functions are identical to your originals
-// (copy them from your previous app.js - they remain unchanged)
+/* Ludo rendering & interaction (real-feel) */
 let ludoState = null;
 function buildLudoBoard(){
   const wrap = document.createElement('div');
   wrap.className = 'ludo-wrap';
   wrap.innerHTML = `
     <div style="text-align:center">
-      <h3 style="font-family:'Great Vibes',cursive">Ludo — Roll & Move</h3>
-      <div id="ludoBoard" style="width:520px;height:520px;margin:0 auto;position:relative;background:#fff0f5;border-radius:8px;"></div>
-    </div>
-  `;
+      <h3 style="font-family:'Great Vibes',cursive">Ludo — Real Feel</h3>
+      <div id="ludoBoard" style="width:560px;height:560px;margin:0 auto;position:relative;background:#fff0f5;border-radius:8px;padding:12px;"></div>
+    </div>`;
   gameContainer.appendChild(wrap);
 }
 function renderLudoState(state){
@@ -252,67 +219,116 @@ function renderLudoState(state){
   const board = document.getElementById('ludoBoard');
   if(!board) return;
   board.innerHTML = '';
-  const size = 520, center = size/2, r = 180;
-  for(let i=0;i<40;i++){
-    const angle = (i/40)*Math.PI*2;
-    const x = center + Math.cos(angle)*r - 18;
-    const y = center + Math.sin(angle)*r - 18;
+  // draw main 52 positions roughly as circle for visuals
+  const size = 520, center=size/2, r=190;
+  for(let i=0;i<52;i++){
+    const angle = (i/52)*Math.PI*2;
+    const x = center + Math.cos(angle)*r - 14;
+    const y = center + Math.sin(angle)*r - 14;
     const el = document.createElement('div');
     el.style.position='absolute';
-    el.style.left=`${x}px`;
-    el.style.top=`${y}px`;
-    el.style.width='36px';el.style.height='36px';el.style.borderRadius='8px';
-    el.style.display='flex';el.style.alignItems='center';el.style.justifyContent='center';
-    el.style.fontSize='12px';
+    el.style.left = `${x}px`; el.style.top = `${y}px`;
+    el.style.width='28px'; el.style.height='28px'; el.style.borderRadius='6px';
+    el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center';
+    el.style.fontSize='11px';
     el.style.background='rgba(255,255,255,0.9)';
-    el.style.boxShadow='0 4px 10px rgba(0,0,0,0.06)';
-    el.textContent = i+1;
+    el.style.border='1px dashed rgba(0,0,0,0.03)';
+    el.dataset.index = i;
     board.appendChild(el);
   }
+  // draw home areas (top)
+  // render tokens:
   const tokenColors = ['#ff6b8a','#7ad0ff','#ffd57a','#b7ffb2'];
-  if(state && state.tokens){
-    let idx=0;
-    for(const sid of Object.keys(state.tokens)){
-      const tokens = state.tokens[sid];
-      const color = tokenColors[idx%tokenColors.length];
-      tokens.forEach((t,ti) => {
-        const tokenEl = document.createElement('div');
-        tokenEl.className='ludo-token';
-        tokenEl.style.position='absolute';
-        tokenEl.style.width='26px';tokenEl.style.height='26px';tokenEl.style.borderRadius='50%';
-        tokenEl.style.background=color;tokenEl.style.display='flex';tokenEl.style.alignItems='center';tokenEl.style.justifyContent='center';
-        tokenEl.style.color='#fff';tokenEl.style.fontSize='12px';tokenEl.style.cursor='pointer';
-        tokenEl.textContent = ti+1;
-        if(t.pos>=0 && t.pos<40){
-          const angle = (t.pos/40)*Math.PI*2;
-          const x = center + Math.cos(angle)*r - 13;
-          const y = center + Math.sin(angle)*r - 13;
-          tokenEl.style.left = `${x}px`; tokenEl.style.top = `${y}px`;
-        } else {
-          const hx = 20 + idx*60 + ti*14;
-          tokenEl.style.left = `${hx}px`; tokenEl.style.top = `20px`;
+  let idx=0;
+  const order = state.order || [];
+  order.forEach((sid, playerIdx) => {
+    const tokens = state.tokens[sid] || [];
+    const color = tokenColors[playerIdx%tokenColors.length];
+    tokens.forEach((t,ti) => {
+      const tokenEl = document.createElement('div');
+      tokenEl.className = 'ludo-token';
+      tokenEl.style.position='absolute';
+      tokenEl.style.width='28px'; tokenEl.style.height='28px'; tokenEl.style.borderRadius='50%';
+      tokenEl.style.background = color; tokenEl.style.display='flex'; tokenEl.style.alignItems='center';
+      tokenEl.style.justifyContent='center'; tokenEl.style.color='#fff'; tokenEl.style.fontWeight='600';
+      tokenEl.style.cursor = 'default';
+      tokenEl.textContent = (ti+1);
+      // compute on-screen position based on token steps
+      const steps = t.steps;
+      if(steps === -1){
+        // home area positions (arranged on corners)
+        const hx = 10 + playerIdx*120 + ti*24;
+        tokenEl.style.left = `${hx}px`; tokenEl.style.top = `10px`;
+      } else if(steps === 100){
+        // finished zone bottom
+        const fx = 10 + playerIdx*120 + ti*24;
+        tokenEl.style.left = `${fx}px`; tokenEl.style.top = `480px`;
+        tokenEl.style.opacity = '0.85';
+      } else {
+        // compute board index
+        const start_idx = [0,13,26,39][playerIdx%4];
+        let board_index = null;
+        if(steps < 52){
+          board_index = (start_idx + steps) % 52;
         }
+        if(board_index !== null){
+          // find the board slot element
+          const slot = board.querySelector(`[data-index="${board_index}"]`);
+          if(slot){
+            tokenEl.style.left = slot.style.left;
+            tokenEl.style.top = slot.style.top;
+            tokenEl.style.transform = 'translate(6px,6px)'; // small offset
+          } else {
+            // fallback
+            tokenEl.style.left = `${center}px`; tokenEl.style.top = `${center}px`;
+          }
+        } else {
+          // home stretch, position near center with offset
+          const hx = center + (playerIdx-1.5)*40 + ti*10;
+          const hy = center;
+          tokenEl.style.left = `${hx}px`; tokenEl.style.top = `${hy}px`;
+        }
+      }
+      // only allow clicks if this token belongs to current player & it's that player's turn
+      const currentSid = state.order[state.turnIndex];
+      if(sid === currentSid && sid === mySid){
+        tokenEl.style.cursor = 'pointer';
         tokenEl.addEventListener('click', ()=> {
+          // request move; server will validate that we rolled and it's our turn
           socket.emit('move_token',{room,tokenIndex:ti});
         });
-        board.appendChild(tokenEl);
-      });
-      idx++;
-    }
-  }
+      }
+      board.appendChild(tokenEl);
+    });
+    idx++;
+  });
+
+  // show whose turn (visual)
+  const turnSid = state.order[state.turnIndex];
+  const playerNames = Array.from(document.querySelectorAll('.player-pill')).map(el => el.textContent);
+  // dice button control
+  rollBtn.disabled = (turnSid !== mySid);
+  // display small label
+  const info = document.createElement('div');
+  info.style.position='absolute';
+  info.style.right='10px'; info.style.bottom='10px';
+  info.style.background = '#fff'; info.style.padding='8px 10px'; info.style.borderRadius='8px';
+  info.style.boxShadow='0 6px 18px rgba(0,0,0,0.06)';
+  const turnPlayer = state.order.indexOf(turnSid);
+  info.innerText = `Turn: Player ${turnPlayer+1}${turnSid===mySid ? ' (You)' : ''}`;
+  board.appendChild(info);
 }
 
-// Chess
+// ---------------- CHESS UI & possible-moves highlighting ----------------
 let chessState = null;
 function buildChessBoard(){
   const wrap = document.createElement('div');
-  wrap.className='chess-wrap';
+  wrap.className = 'chess-wrap';
   wrap.innerHTML = `
     <div style="text-align:center">
-      <h3 style="font-family:'Great Vibes',cursive">Chess — Capture the King</h3>
+      <h3 style="font-family:'Great Vibes',cursive">Chess — Turn Based</h3>
       <div id="chessBoard" style="width:520px;height:520px;margin:0 auto;display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);border-radius:8px;overflow:hidden"></div>
-    </div>
-  `;
+    </div>`;
   gameContainer.appendChild(wrap);
 }
 let selectedSquare = null;
@@ -326,20 +342,36 @@ function renderChessState(state){
       const sq = document.createElement('div');
       const isLight = (r+c)%2===0;
       sq.style.background = isLight? '#f6eefa':'#bfa9c0';
-      sq.style.width='100%';sq.style.height='100%';sq.style.display='flex';sq.style.alignItems='center';sq.style.justifyContent='center';
-      sq.style.fontSize='22px';sq.style.cursor='pointer';sq.style.userSelect='none';
+      sq.style.width='100%'; sq.style.height='100%'; sq.style.display='flex';
+      sq.style.alignItems='center'; sq.style.justifyContent='center';
+      sq.style.fontSize='22px'; sq.style.cursor='pointer'; sq.style.userSelect='none';
       sq.dataset.r = r; sq.dataset.c = c;
-      const piece = state.board?.[r]?.[c];
-      sq.textContent = piece? prettyPiece(piece): '';
+      const piece = (state.board && state.board[r]) ? state.board[r][c] : '';
+      sq.textContent = piece ? prettyPiece(piece) : '';
+      // click
       sq.addEventListener('click', ()=> {
-        const from = selectedSquare;
-        const to = {r,c};
-        if(!from){
+        const myColorLocal = state.color_of ? state.color_of[mySid] : myColor;
+        if(!myColorLocal) { alert('You have no color assigned'); return; }
+        // If no selection yet:
+        if(!selectedSquare){
           if(!piece) return;
-          sq.style.boxShadow='0 0 0 3px rgba(255,105,180,0.15)';
+          if(piece[0] !== myColorLocal) return; // only select own piece
+          // compute possible moves and highlight
+          const moves = computePossibleMoves(state, r, c);
+          highlightSquares(moves);
+          sq.style.boxShadow = '0 0 0 3px rgba(255,105,180,0.15)';
           selectedSquare = {r,c};
         } else {
-          socket.emit('chess_move',{room,from, to});
+          // emit move
+          const from = selectedSquare;
+          const to = {r,c};
+          // ensure it's our turn
+          if(state.turn !== (state.color_of ? state.color_of[mySid] : myColor)) {
+            alert('Not your turn');
+            clearSelection();
+            return;
+          }
+          socket.emit('chess_move',{room,from,to});
           clearSelection();
         }
       });
@@ -347,16 +379,78 @@ function renderChessState(state){
     }
   }
 }
+// clearing highlights
 function clearSelection(){
   selectedSquare = null;
   const board = document.getElementById('chessBoard');
   if(!board) return;
-  [...board.children].forEach(ch => ch.style.boxShadow='none');
+  [...board.children].forEach(ch => { ch.style.boxShadow = 'none'; ch.style.outline = 'none'; });
 }
+function highlightSquares(moves){
+  const board = document.getElementById('chessBoard');
+  if(!board) return;
+  moves.forEach(m => {
+    const idx = m.r*8 + m.c;
+    const cell = board.children[idx];
+    if(cell){
+      cell.style.outline = '3px solid rgba(255,105,180,0.25)';
+    }
+  });
+}
+
+// compute possible moves on client using same simplified rules as server
+function computePossibleMoves(state, r1, c1){
+  const brd = state.board;
+  const piece = brd[r1][c1];
+  if(!piece) return [];
+  const color = piece[0], ptype = piece[1];
+  const moves = [];
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      const dr = r - r1, dc = c - c1;
+      const target = brd[r][c];
+      if(target && target[0] === color) continue;
+      let legal = false;
+      if(ptype === 'P'){
+        const dir = color === 'w' ? -1 : 1;
+        if(dc === 0 && dr === dir && !target) legal = true;
+        if(Math.abs(dc) === 1 && dr === dir && target && target[0] !== color) legal = true;
+        if(dc === 0 && ((r1 === 6 && color === 'w') || (r1 === 1 && color === 'b')) && dr === 2*dir && !target){
+          const midr = r1 + dir;
+          if(!brd[midr][c1]) legal = true;
+        }
+      } else if(ptype === 'N'){
+        if((Math.abs(dr)===2 && Math.abs(dc)===1) || (Math.abs(dr)===1 && Math.abs(dc)===2)) legal = true;
+      } else if(ptype === 'B'){
+        if(Math.abs(dr)===Math.abs(dc) && client_clear_path(brd,r1,c1,r,c)) legal = true;
+      } else if(ptype === 'R'){
+        if((dr===0 || dc===0) && client_clear_path(brd,r1,c1,r,c)) legal = true;
+      } else if(ptype === 'Q'){
+        if((Math.abs(dr)===Math.abs(dc) || dr===0 || dc===0) && client_clear_path(brd,r1,c1,r,c)) legal = true;
+      } else if(ptype === 'K'){
+        if(Math.max(Math.abs(dr),Math.abs(dc)) === 1) legal = true;
+      }
+      if(legal) moves.push({r,c});
+    }
+  }
+  return moves;
+}
+function client_clear_path(brd,r1,c1,r2,c2){
+  const dr = r2-r1; const dc = c2-c1;
+  const steps = Math.max(Math.abs(dr), Math.abs(dc));
+  if(steps === 0) return true;
+  const step_r = dr/steps; const step_c = dc/steps;
+  for(let s=1;s<steps;s++){
+    const rr = Math.round(r1 + step_r*s), cc = Math.round(c1 + step_c*s);
+    if(brd[rr][cc]) return false;
+  }
+  return true;
+}
+
 function prettyPiece(p){
   const map = {P:'♟',R:'♜',N:'♞',B:'♝',Q:'♛',K:'♚'};
   return map[p[1]] || '?';
 }
 
-// initial UI
+// start UI
 showLobby();
